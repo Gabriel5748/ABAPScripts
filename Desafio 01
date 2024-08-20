@@ -1,0 +1,109 @@
+*&---------------------------------------------------------------------*
+*& Report ZTR_GF_001
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT ZTR_GF_001.
+
+TABLES:ZTRT_GF_001.
+
+*
+*CAMPO TIPO
+*Nome String
+*Idade I
+*Cidade_Natal String
+*Hobby String
+
+*tables: ZRTT_GF_001.
+
+*Declarando os campos da ZTRLT_GF_001
+
+TYPES:BEGIN OF TY_ZRTT_GF_001,
+        NOME         TYPE ZTRT_GF_001-NOME,
+        IDADE        TYPE ZTRT_GF_001-IDADE,
+        CIDADE_NATAL TYPE ZTRT_GF_001-CIDADE_NATAL,
+        HOBBY        TYPE ZTRT_GF_001-HOBBY,
+
+      END OF TY_ZRTT_GF_001.
+
+DATA: ZTRES_GF_001 TYPE TY_ZRTT_GF_001,
+      ZTRLT_GF_001 TYPE TABLE OF TY_ZRTT_GF_001.
+
+
+PERFORM ADICIONARDADOS.
+
+PERFORM DISPLAY_ALV.
+
+*Repetir esse processo com os outrosZTRES_GF_001
+
+*loop at ZTRLT_GF_001 intoZTRES_GF_001.
+*  write:/ 'Nome: ',ZTRES_GF_001-nome.
+*  write:'Idade: ',ZTRES_GF_001-idade.
+*  write:'Cidade-Natal: ',ZTRES_GF_001-cidade_natal.
+*  write: 'Hobby: ',ZTRES_GF_001-hobby.
+*
+*ENDLOOP.
+
+FORM ADICIONARDADOS.
+  ZTRES_GF_001-NOME = 'Gabriel'.
+  ZTRES_GF_001-IDADE = '19'.
+  ZTRES_GF_001-CIDADE_NATAL = 'Ribeirão Preto'.
+  ZTRES_GF_001-HOBBY = 'Basquete'.
+  APPEND ZTRES_GF_001 TO ZTRLT_GF_001.
+
+  ZTRES_GF_001-NOME = 'Fernanda'.
+  ZTRES_GF_001-IDADE = '29'.
+  ZTRES_GF_001-CIDADE_NATAL = 'Franca'.
+  ZTRES_GF_001-HOBBY = 'Natação'.
+  APPEND ZTRES_GF_001 TO ZTRLT_GF_001.
+
+  ZTRES_GF_001-NOME = 'Thiago'.
+  ZTRES_GF_001-IDADE = '17'.
+  ZTRES_GF_001-CIDADE_NATAL = 'Ribeirão Preto'.
+  ZTRES_GF_001-HOBBY = 'Futebol'.
+  APPEND ZTRES_GF_001 TO ZTRLT_GF_001.
+
+  ZTRES_GF_001-NOME = 'Maria'.
+  ZTRES_GF_001-IDADE = '20'.
+  ZTRES_GF_001-CIDADE_NATAL = 'Santa Catarina'.
+  ZTRES_GF_001-HOBBY = 'Jogar'.
+  APPEND ZTRES_GF_001 TO ZTRLT_GF_001.
+
+
+  ZTRES_GF_001-NOME = 'Luana'.
+  ZTRES_GF_001-IDADE = '50'.
+  ZTRES_GF_001-CIDADE_NATAL = 'Rio de Janeiro'.
+  ZTRES_GF_001-HOBBY = 'Ler'.
+  APPEND ZTRES_GF_001 TO ZTRLT_GF_001.
+ENDFORM.
+*
+*
+*Não exibe os nomes das colunas
+
+FORM DISPLAY_ALV.
+
+  DATA: LO_SALV TYPE REF TO CL_SALV_TABLE,
+        LO_MSG  TYPE REF TO CX_SALV_MSG,
+        COLUMN  TYPE REF TO CL_SALV_COLUMN,
+        LO_COLS TYPE REF TO CL_SALV_COLUMNS_TABLE,
+        LO_COL  TYPE REF TO CL_SALV_COLUMN.
+
+  IF ZTRLT_GF_001 IS NOT INITIAL.
+    TRY.
+        CL_SALV_TABLE=>FACTORY(
+        IMPORTING
+          R_SALV_TABLE = LO_SALV
+        CHANGING
+          T_TABLE      = ZTRLT_GF_001
+          ).
+
+        LO_SALV->GET_FUNCTIONS( )->SET_ALL( ABAP_TRUE ).
+
+        LO_SALV->DISPLAY( ).
+
+
+      CATCH CX_SALV_MSG INTO LO_MSG.
+        MESSAGE LO_MSG->GET_TEXT( ) TYPE 'S' DISPLAY LIKE 'E'.
+    ENDTRY.
+  ENDIF.
+ENDFORM.
