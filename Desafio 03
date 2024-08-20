@@ -1,0 +1,33 @@
+*&---------------------------------------------------------------------*
+*& Report  Z_ATIVIDADE_4
+*&
+*&---------------------------------------------------------------------*
+*&
+*&
+*&---------------------------------------------------------------------*
+REPORT Z_ATIVIDADE_4.
+*
+include zreport_src.
+include zreport_model.
+include zreport_view.
+include zreport_controller.
+
+data: gc_controller type ref to report_controller.
+
+INITIALIZATION.
+create object gc_controller.
+
+gc_controller->initialization( ).
+
+at SELECTION-SCREEN OUTPUT.
+  gc_controller->selection_screen_o( ).
+
+  at SELECTION-SCREEN.
+    gc_controller->selection_screen( ).
+
+    START-OF-SELECTION.
+    gc_controller->start_of_selection( ).
+
+*    Exibição do alv - tela/view
+    end-of-SELECTION.
+    gc_controller->end_of_selection( ).
