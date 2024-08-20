@@ -1,0 +1,208 @@
+*&---------------------------------------------------------------------*
+*& Report YXML_GF
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT yxml_gf.
+
+include y_report_screen.
+include y_report_model.
+include y_report_view.
+include y_report_controller.
+
+
+*PARAMETERS: fullname TYPE rlgrap-filename.
+
+
+*  DATA: lt_elements TYPE TABLE OF ty_node,
+*        ls_element  TYPE ty_node.
+
+
+DATA: lv_file_content TYPE xstring,
+      lv_file_text    TYPE string,
+      lv_is_xml       TYPE abap_bool.
+
+*AT SELECTION-SCREEN ON VALUE-REQUEST FOR fullname.
+*  CALL FUNCTION 'F4_FILENAME'
+*    IMPORTING
+*      file_name = fullname.
+
+
+
+
+START-OF-SELECTION.
+
+DATA:lo_root TYPE REF TO if_ixml_node.
+DATA: lo_node TYPE REF TO if_ixml_node.
+DATA: lo_parent_node TYPE REF TO if_ixml_node.
+DATA lv_node_name TYPE string.
+DATA lv_parent_name TYPE string.
+DATA ixml TYPE REF TO if_ixml.
+DATA stream_factory TYPE REF TO if_ixml_stream_factory.
+DATA document TYPE REF TO if_ixml_document.
+DATA lo_element TYPE REF TO if_ixml_element.
+DATA xml TYPE xstring.
+DATA: lf_sysubrc TYPE i.
+DATA: lv_file_path  TYPE string.
+
+
+DATA: lr_cl_xml_doc TYPE REF TO cl_xml_document.
+
+
+* Criar uma instância da classe
+  CREATE OBJECT lr_cl_xml_doc.
+  lf_sysubrc = sy-subrc.
+
+
+*  CALL METHOD lr_cl_xml_doc->import_from_file
+*    EXPORTING
+*      filename = fullname
+*    RECEIVING
+*      retcode  = lf_sysubrc.
+
+
+
+  TYPES: BEGIN OF ty_node,
+           column TYPE string,
+           value  TYPE string,
+         END OF ty_node.
+
+  DATA: lt_nodes TYPE TABLE OF ty_node,
+        ls_node  TYPE ty_node.
+
+
+
+*  DATA xml TYPE xstring.
+  xml =
+  cl_abap_codepage=>convert_to(
+  `<note>` &&
+    `<to>Tove</to>` &&
+    `<from>Jani</from>` &&
+    `<heading>Reminder</heading>` &&
+    `<body>Don't forget me this weekend!</body>` &&
+  `</note>` ).
+
+  "Access iXML-Library
+*  DATA:lo_root TYPE REF TO if_ixml_node.
+*  DATA: lo_node TYPE REF TO if_ixml_node.
+*  DATA: lo_parent_node TYPE REF TO if_ixml_node.
+*  DATA lv_node_name TYPE string.
+*  DATA lv_parent_name TYPE string.
+*  DATA ixml TYPE REF TO if_ixml.
+*  DATA stream_factory TYPE REF TO if_ixml_stream_factory.
+*  DATA document TYPE REF TO if_ixml_document.
+*  DATA lo_element TYPE REF TO if_ixml_element.
+*
+*  DATA: lt_elements TYPE TABLE OF ty_node,
+*        ls_element  TYPE ty_node.
+
+
+  ixml = cl_ixml=>create( ).
+
+  stream_factory = ixml->create_stream_factory( ).
+
+  document = ixml->create_document( ).
+
+
+  "Parse XML-data into DOM
+  IF ixml->create_parser(
+    document = document
+    stream_factory = stream_factory
+    istream = stream_factory->create_istream_xstring( string = xml )
+    )->parse( ) <> 0.
+    RETURN.
+  ENDIF.
+
+  "Iterate DOM and modify text elements
+  DATA iterator TYPE REF TO if_ixml_node_iterator.
+  iterator = document->create_iterator( ).
+  DATA node TYPE REF TO if_ixml_node.
+  DO.
+    node = iterator->get_next( ).
+    IF node IS INITIAL.
+      EXIT.
+    ENDIF.
+    IF node->get_type( ) = if_ixml_node=>co_node_element.
+      ls_node-column  = node->get_name( ).
+    ENDIF.
+    IF node->get_type( ) = if_ixml_node=>co_node_text.
+      ls_node-value = node->get_value( ).
+*    node->set_value( to_upper( node->get_value( ) ) ).
+      .
+      APPEND ls_node TO lt_nodes.
+    ENDIF.
+  ENDDO.
+
+  LOOP AT lt_nodes INTO DATA(it_nodes).
+
+    WRITE:it_nodes-value.
+  ENDLOOP.
+
+
+
+*Render DOM into xstring
+*CLEAR xml.
+*document->render(
+*  ostream = ixml->create_stream_factory(
+*  )->create_ostream_xstring(
+*  string = xml ) ).
+*
+*cl_abap_browser=>show_xml( xml_xstring = xml ).
+
+
+  FIELD-SYMBOLS: <ft_dyntable> TYPE STANDARD TABLE,
+                 <fw_dyntable>,
+                 <fw_fldval>   TYPE any,
+                 <fw_struct>.
+
+  DATA: t_newtable TYPE REF TO data,
+        t_newline  TYPE REF TO data,
+        t_fldcat   TYPE lvc_t_fcat.
+
+  DATA:lo_struct        TYPE REF TO cl_abap_structdescr,
+       lo_table         TYPE REF TO cl_abap_tabledescr,
+       lo_datareftab    TYPE REF TO data,
+       lo_datarefstruct TYPE REF TO data.
+
+  DATA:li_comp TYPE cl_abap_structdescr=>component_table,
+       ls_comp LIKE LINE OF li_comp.
+
+  FIELD-SYMBOLS:<li_table>  TYPE STANDARD TABLE,
+                <ls_struct> TYPE any.
+
+
+  LOOP AT lt_nodes INTO ls_node.
+
+    ls_comp-name = ls_node-column.
+    ls_comp-type = cl_abap_elemdescr=>get_c( '50' ).
+
+
+    APPEND ls_comp TO li_comp.
+    FREE ls_comp.
+
+    lo_struct = cl_abap_structdescr=>create( li_comp ).
+    lo_table = cl_abap_tabledescr=>create( p_line_type = lo_struct ).
+
+  ENDLOOP.
+
+  CREATE DATA lo_datareftab TYPE HANDLE lo_table.
+  ASSIGN lo_datareftab->* TO <li_table>.
+
+  CREATE DATA lo_datarefstruct TYPE HANDLE lo_struct.
+  ASSIGN lo_datarefstruct->* TO <ls_struct>.
+
+
+  LOOP AT lt_nodes INTO ls_node.
+    ASSIGN COMPONENT ls_node-column OF STRUCTURE <ls_struct> TO FIELD-SYMBOL(<lv_teste>).
+    IF <lv_teste> IS ASSIGNED.
+      <lv_teste> = ls_node-value.
+    ENDIF.
+
+*  APPEND <ls_struct> TO <li_table>.
+*  CLEAR <lv_teste>.
+  ENDLOOP.
+
+  APPEND <ls_struct> TO <li_table>.
+
+
+  cl_demo_output=>display( <li_table> ).
