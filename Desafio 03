@@ -31,3 +31,208 @@ at SELECTION-SCREEN OUTPUT.
 *    Exibição do alv - tela/view
     end-of-SELECTION.
     gc_controller->end_of_selection( ).
+
+
+
+
+
+
+
+
+*&---------------------------------------------------------------------*
+*& Include          ZREPORT_MODEL
+*&---------------------------------------------------------------------*
+
+class report_model DEFINITION.
+  PUBLIC SECTION.
+
+  data: t_cab_pedido type table of ZTRT_GF_002, s_cab_pedido type ZTRT_GF_002.
+
+  methods:start_of_selection,get_cab_pedido, init_modify_ped,validate_screen_modify,modify_reg.
+  ENDCLASS.
+
+  class report_model IMPLEMENTATION.
+    method:start_of_selection.
+
+*      write: 'Start_Of_Selection chamado'.
+       me->get_cab_pedido( ).
+
+      ENDMETHOD.
+
+
+
+*Se não estivesse em ordem deveria ser usado select (campos) into corresponding fields of table (tabela)
+      method:get_cab_pedido.
+
+*         do 5 times.
+**        Adicionar essas linhas na tabela
+*        s_cab_pedido-numero_pedido = sy-index.
+*        s_cab_pedido-data_pedido = sy-datum.
+*        s_cab_pedido-cancelado = 'X'.
+*        modify ZTRT_GF_002 from s_cab_pedido.
+*        enddo.
+
+        select numero_pedido,data_pedido,cancelado
+          from ZTRT_GF_002
+          into corresponding fields of table @t_cab_pedido.
+*          where numero_pedido = @n_pedido
+*          and data_pedido = @d_pedido.
+        endmethod.
+
+        method: init_modify_ped.
+       me->validate_screen_modify( ).
+       me->modify_reg( ).
+
+
+          endmethod.
+
+          method:validate_screen_modify.
+
+                  if mod_num is INITIAL.
+                    message 'Número do Pedido é obrigatório' type 'I'.
+                    endif.
+                    if mod_data is initial.
+                         message 'Data do Pedido é obrigatório' type 'I'.
+                        endif.
+
+            endmethod.
+
+            method:modify_reg.
+                            data: pedido type ZTRT_GF_002,
+                        msg type string.
+                pedido-numero_pedido = mod_num.
+                  pedido-data_pedido = mod_data.
+                  pedido-cancelado = mod_canc.
+
+
+                  modify ZTRT_GF_002 from pedido.
+
+                  msg = mod_num.
+
+                  concatenate 'Pedido' msg 'salvo com sucesso!' into msg separated by space.
+
+                  message msg type 'S'.
+
+              endmethod.
+   ENDCLASS.
+
+
+
+
+
+*&---------------------------------------------------------------------*
+*& Include          ZREPORT_VIEW
+*&---------------------------------------------------------------------*
+class report_view definition.
+  public SECTION.
+  data: salv_alv type ref to cl_salv_table.
+  methods:initialization,
+  selection_screen_o,
+  selection_screen importing model type ref to report_model,
+  end_of_selection importing model type ref to report_model,
+  display_alv importing model type ref to report_model,
+  set_toolbar,
+  set_fieldcat.
+endclass.
+
+class report_view IMPLEMENTATION.
+  method: initialization.
+ filt = 'Filtração'.
+ mod = 'Criação/Modificação'.
+ mod_btn = '@2L@SALVAR'.
+    ENDMETHOD.
+
+*    Valida o que foi preenchido dentro de uma caixa de seleção
+    method: selection_screen_o.
+      write:'Selection Screen Output chamado'.
+      endmethod.
+
+         method: selection_screen.
+*           Armazena o comando dó usuário.
+      case sy-ucomm.
+                when 'MODIFY_REG'.
+                  model->init_modify_ped( ).
+                  ENDCASE.
+      endmethod.
+
+      method: end_of_selection.
+         me->display_alv( model ).
+      endmethod.
+
+       method: display_alv.
+      cl_salv_table=>factory(
+      IMPORTING r_salv_table = salv_alv
+        CHANGING t_table = model->t_cab_pedido
+      ).
+
+       me->set_toolbar( ).
+
+       me->set_fieldcat( ).
+
+      salv_alv->display( ).
+
+      endmethod.
+
+      method: set_toolbar.
+           data: functions type ref to cl_salv_functions_list.
+
+      functions = salv_alv->get_functions( ).
+      functions->set_all( ).
+        endmethod.
+
+          method: set_fieldcat.
+           data: columns type ref to cl_salv_columns_list,
+                  column type ref to cl_salv_column.
+
+      columns = salv_alv->get_columns( ).
+      columns->is_optimized( ).
+
+      column = columns->get_column( 'MANDT' ).
+      column->set_visible( abap_false ).
+        endmethod.
+
+  endclass.
+
+
+
+
+
+*&---------------------------------------------------------------------*
+*& Include          ZREPORT_CONTROLLER
+*&---------------------------------------------------------------------*
+
+class report_controller DEFINITION.
+  public section.
+
+  data: view type ref to report_view,model type ref to report_model.
+  methods: constructor,initialization,selection_screen_o,selection_screen,start_of_selection,end_of_selection.
+
+endclass.
+
+class report_controller IMPLEMENTATION.
+    method: constructor.
+      create object view.
+      create object model.
+      endmethod.
+
+        method:initialization.
+    me->view->initialization( ).
+    ENDMETHOD.
+
+method: selection_screen_o.
+  me->view->selection_screen_o( ).
+  endmethod.
+
+  method:selection_screen.
+    me->view->selection_screen( model ).
+    endmethod.
+
+      method:start_of_selection.
+    me->model->start_of_selection( ).
+    endmethod.
+
+    method: end_of_selection.
+      me->view->end_of_selection( me->model ).
+      endmethod.
+
+ENDCLASS.
