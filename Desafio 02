@@ -1,0 +1,188 @@
+*&---------------------------------------------------------------------*
+*& Report ZTR_GF_003
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT ztr_gf_003.
+
+*Escrevendo a classe na se38 primeiro
+
+TABLES: sflight.
+
+*filtro por preço e data
+*FLDATE
+*PRICE
+*DATA: tabela TYPE TABLE OF sflight.
+
+SELECTION-SCREEN: BEGIN OF BLOCK atv3 WITH FRAME TITLE title.
+*SELECT-OPTIONS: s_data FOR sflight-fldate.
+*SELECTION-SCREEN SKIP.
+*
+PARAMETERS: s_data  TYPE sflight-fldate OBLIGATORY.
+
+SELECT-OPTIONS: s_preco FOR sflight-price NO INTERVALS.
+
+SELECTION-SCREEN SKIP.
+*SELECT-OPTIONS: datamax FOR sflight-fldate no intervals.
+*SELECT-OPTIONS: precomax FOR sflight-price no intervals.
+
+PARAMETERS: datamax  TYPE sflight-fldate,precomax TYPE sflight-price.
+
+SELECTION-SCREEN: END OF BLOCK atv3.
+
+CLASS zrelatorio_voo DEFINITION.
+
+  PUBLIC SECTION.
+
+    TYPES: BEGIN OF ty_sflight,
+             carrid TYPE sflight-carrid,
+             fldate TYPE sflight-fldate,
+             price  TYPE sflight-price,
+           END OF ty_sflight.
+
+
+    DATA: tabela      TYPE TABLE OF ty_sflight.
+
+    METHODS: get_table,get_data,display_data,constructor.
+
+  PRIVATE SECTION.
+    TYPES: BEGIN OF ls_ty_sflight,
+             carrid TYPE sflight-carrid,
+             fldate TYPE sflight-fldate,
+             price  TYPE sflight-price,
+           END OF ls_ty_sflight.
+
+    DATA: lv_tabela      TYPE TABLE OF ls_ty_sflight.
+ENDCLASS.
+
+CLASS zrelatorio_voo IMPLEMENTATION.
+  METHOD: get_data.
+    PERFORM selecionar_dados.
+  ENDMETHOD.
+
+  METHOD: display_data.
+    PERFORM exibir_dados.
+  ENDMETHOD.
+
+  METHOD get_table.
+
+    tabela = lv_tabela.
+
+  ENDMETHOD.
+
+  METHOD: constructor.
+    me->get_table( ).
+  ENDMETHOD.
+ENDCLASS.
+
+
+DATA: cl_relatorio TYPE REF TO zrelatorio_voo.
+
+INITIALIZATION.
+  title = 'Relatório de Vôo'.
+
+  CREATE OBJECT cl_relatorio.
+
+  cl_relatorio->get_table( ).
+
+START-OF-SELECTION.
+
+  cl_relatorio->get_data( ).
+*  cl_relatorio->display_data( ).
+
+
+*Amanha mudar esse OR
+*Trabalhar melhor com os if e elses
+
+FORM selecionar_dados.
+  PERFORM tratamento_condicoes.
+ENDFORM.
+
+FORM exibir_dados.
+  DATA: gr_table TYPE REF TO cl_salv_table.
+  DATA: gr_functions TYPE REF TO   cl_salv_functions_list.
+
+  CALL METHOD cl_salv_table=>factory
+    IMPORTING
+      r_salv_table = gr_table
+    CHANGING
+      t_table      = cl_relatorio->tabela.
+
+  gr_functions = gr_table->get_functions( ).
+
+  gr_functions->set_group_sort( abap_true ).
+  gr_functions->set_aggregation_total( abap_true ).
+
+  gr_table->display( ).
+
+ENDFORM.
+
+*From para armazenar os ifs usados
+FORM tratamento_condicoes.
+  IF datamax IS INITIAL AND precomax IS INITIAL.
+    SELECT carrid,fldate,price
+    FROM sflight
+    WHERE fldate = @s_data
+      AND price IN @s_preco
+    INTO TABLE @cl_relatorio->tabela.
+
+    IF sy-subrc EQ 0.
+      PERFORM exibir_dados.
+    ELSE.
+      MESSAGE 'Nenhum dado encontrado' TYPE 'I'.
+    ENDIF.
+
+  ELSE.
+
+    IF precomax IS NOT INITIAL AND datamax IS INITIAL.
+
+      SELECT carrid,fldate,price
+    FROM sflight
+    WHERE price <= @precomax
+      AND fldate = @s_data
+    INTO TABLE @cl_relatorio->tabela.
+
+      IF sy-subrc EQ 0.
+        PERFORM exibir_dados.
+      ELSE.
+        MESSAGE 'Nenhum dado encontrado' TYPE 'I'.
+      ENDIF.
+
+    ELSE.
+
+      IF datamax IS NOT INITIAL AND precomax IS INITIAL.
+
+        SELECT carrid,fldate,price
+      FROM sflight
+      WHERE fldate <= @datamax
+*        OR price <= @precomax )
+*        AND fldate = @s_data
+      INTO TABLE @cl_relatorio->tabela.
+
+        IF sy-subrc EQ 0.
+          PERFORM exibir_dados.
+        ELSE.
+          MESSAGE 'Nenhum dado encontrado' TYPE 'I'.
+        ENDIF.
+
+      ELSE.
+
+        SELECT carrid,fldate,price
+      FROM sflight
+      WHERE fldate <= @datamax
+        AND price <= @precomax
+*        AND fldate = @s_data
+      INTO TABLE @cl_relatorio->tabela.
+
+        IF sy-subrc EQ 0.
+          PERFORM exibir_dados.
+        ELSE.
+          MESSAGE 'Nenhum dado encontrado' TYPE 'I'.
+        ENDIF.
+
+      ENDIF.
+
+    ENDIF.
+
+  ENDIF.
+ENDFORM.
