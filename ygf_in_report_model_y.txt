@@ -1,0 +1,158 @@
+*&---------------------------------------------------------------------*
+*& Include          YGF_IN_REPORT_MODEL_Y
+*&---------------------------------------------------------------------*
+CLASS report_model DEFINITION.
+  PUBLIC SECTION.
+
+*  *    EKBE - bwart
+*
+*    ls_gm-move_type = '561'.
+*
+**EKPO - MATNR
+*    ls_gm-material = 'abcde'.
+*
+**    EKBE - WERKS
+*    ls_gm-plant = ' '.
+*
+**EKPO - LGORT
+*    ls_gm-stge_loc = ' '.
+*
+*
+**EKBE - MENGE
+*
+*    ls_gm-entry_qnt = ' '.
+*
+**    EKBE - CHARG
+*    ls_gm-batch = ' '.
+
+    TYPES:
+* Tabela de saída
+      BEGIN OF ty_relatorio,
+        lifnr TYPE ekko-lifnr,
+        ebeln TYPE ekko-ebeln,
+        ebelp TYPE ekpo-ebelp,
+        bwart TYPE ekbe-bwart,
+        matnr TYPE ekpo-matnr,
+*        werks TYPE ekbe-werks,
+        werks TYPE ekpo-werks,
+        lgort TYPE ekpo-lgort,
+*        menge TYPE ekbe-menge,
+        menge TYPE ekpo-menge,
+        charg TYPE ekbe-charg,
+        aedat TYPE ekko-aedat,
+        bukrs TYPE ekko-bukrs,
+        waers TYPE ekko-waers,
+        wrbtr TYPE ekbe-wrbtr,
+        meins TYPE ekpo-meins,
+        lfgja TYPE ekbe-lfgja,
+        lfbnr TYPE ekbe-lfbnr,
+*        Documento ao gerar a BAPI
+        belnr TYPE ekbe-belnr,
+*        BELNR type RBKP-belnr,
+      END OF ty_relatorio.
+
+    TYPES:it_tabela TYPE TABLE OF ty_relatorio WITH EMPTY KEY.
+
+    METHODS:start_of_selection RETURNING VALUE(lt_table) TYPE it_tabela,
+      gerar_migo,
+      gerar_miro,
+      estornar_migo,
+      estornar_miro.
+
+
+ENDCLASS.
+
+CLASS report_model IMPLEMENTATION.
+  METHOD:start_of_selection.
+
+    SELECT ek~lifnr,ek~ebeln,ekp~ebelp,ekb~bwart,ekp~matnr,ekp~werks,ekp~lgort,ekp~menge,ekb~charg,ek~aedat,ek~bukrs,ek~waers,ekb~wrbtr,ekp~meins,ekb~lfbnr,ekb~lfgja,ekb~belnr
+      FROM ekko AS ek
+      INNER JOIN ekpo AS ekp
+      ON ek~ebeln = ekp~ebeln
+      INNER JOIN ekbe AS ekb
+      ON ekb~ebeln = ek~ebeln
+      WHERE ek~aedat IN @p_period
+      AND ek~lifnr NE ' '
+*      AND ekb~bwart NE ' '
+*      AND ekp~matnr NE ' '
+*      AND ekp~werks NE ' '
+*      AND ekp~lgort NE ' '
+*      AND ekp~menge NE ' '
+*      AND ekb~charg NE ' '
+*      AND ek~ebeln = '4500000887'
+      AND ek~aedat IN @p_period
+      OR ek~ebeln = @p_data
+      INTO CORRESPONDING FIELDS OF TABLE @lt_table
+      UP TO 100 ROWS.
+
+
+    LOOP AT lt_table INTO DATA(ls_table).
+*      IF ls_table-matnr EQ '1060'.
+      ls_table-aedat = '20240210'.
+      ls_table-wrbtr = '100'.
+*
+      IF ls_table-lfbnr IS INITIAL.
+        ls_table-lfbnr = '5000000840'.
+      ENDIF.
+
+
+
+      ls_table-lfgja = '2024'.
+      MODIFY lt_table FROM ls_table.
+*      ENDIF.
+
+
+    ENDLOOP.
+
+
+
+  ENDMETHOD.
+
+  METHOD:gerar_migo.
+*    TYPES: BEGIN OF ty_errors,
+*         TYPE    TYPE c LENGTH 1,
+*         ID      TYPE sy-msgid,
+*         NUMBER  TYPE sy-msgno,
+*         MESSAGE TYPE sy-msgv1,
+*       END OF ty_errors.
+*
+*       TYPES: BEGIN OF ty_item,
+*         MATERIAL TYPE matnr,
+*         PLANT    TYPE werks,
+*         STGE_LOC TYPE lgort,
+*         ENTRY_QNT TYPE menge,
+*       END OF ty_item.
+*
+*       TYPES: BEGIN OF ty_header,
+*         PSTNG_DATE TYPE bapi2017_gm_head_01-pstng_date,
+*         DOC_DATE   TYPE bapi2017_gm_head_01-doc_date,
+*         GM_CODE    TYPE bapi2017_gm_code-gm_code,
+*       END OF ty_header.
+*
+*    DATA: lt_header TYPE TABLE OF ty_header,
+*          lt_item   TYPE TABLE OF ty_item,
+*          lt_errors TYPE TABLE OF ty_errors.
+*
+*    " Preencha lt_header e lt_item com os dados relevantes
+*
+*CALL FUNCTION 'BAPI_GOODSMVT_CREATE'
+*  EXPORTING
+*    goodsmvt_header = lt_header
+*    goodsmvt_code = '123321'
+*  TABLES
+*    goodsmvt_item = lt_item
+*    return = lt_errors.
+
+
+  ENDMETHOD.
+
+  METHOD:gerar_miro.
+  ENDMETHOD.
+
+  METHOD:estornar_migo.
+  ENDMETHOD.
+
+  METHOD:estornar_miro.
+  ENDMETHOD.
+
+ENDCLASS.

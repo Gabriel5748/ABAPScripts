@@ -1,0 +1,1352 @@
+*&---------------------------------------------------------------------*
+*& Include          YGF_IN_REPORT_VIEW_Y
+*&---------------------------------------------------------------------*
+CLASS report_view DEFINITION.
+  PUBLIC SECTION.
+    TYPES: tabela TYPE TABLE OF report_model=>ty_relatorio.
+
+*Ideias de verificar se a miro foi estornada para depois poder estornar a migo:
+*-Importar um boolean
+*-Fazer um loop na tabela rbkp pra ver se já existe um documento/referência(doc_mat) ja criado com determinado valor
+
+
+
+    DATA: tabela_exportada TYPE tabela.
+    DATA: lo_events         TYPE REF TO cl_salv_events,
+          events            TYPE REF TO cl_salv_events_table,
+          columns           TYPE REF TO cl_salv_columns,
+          column            TYPE REF TO cl_salv_column,
+          obj_tree          TYPE REF TO cl_salv_tree,
+          obj_nodes         TYPE REF TO cl_salv_nodes,
+          obj_node          TYPE REF TO cl_salv_node,
+          lt_selected_nodes TYPE salv_t_nodes,
+          ls_selected_nodes TYPE salv_s_nodes,
+          obj_settings      TYPE REF TO cl_salv_tree_settings,
+          obj_events        TYPE REF TO  cl_salv_events_tree,
+          salv_selection    TYPE REF TO cl_salv_selections_tree,
+          obj_control       TYPE REF TO cl_item_tree_control,
+          salv_item         TYPE REF TO cl_salv_item,
+          w_layout          TYPE slis_layout_alv.
+
+    DATA: lv_text        TYPE lvc_value,
+          lv_text_compra TYPE lvc_value.
+
+
+
+    DATA: pedido_compra   TYPE ekko-ebeln,
+          item            TYPE ekpo-ebelp,
+          tipo_mov        TYPE ekbe-bwart,
+          material        TYPE ekpo-matnr,
+          centro          TYPE ekpo-werks,
+          deposito        TYPE ekpo-lgort,
+          quantidade      TYPE ekpo-menge,
+          lote            TYPE ekbe-charg,
+          data_lancamento TYPE ekko-aedat.
+
+    DATA:empresa        TYPE ekko-bukrs,
+         codigo_m       TYPE ekko-waers,
+         montante       TYPE ekbe-wrbtr,
+         unidade_medida TYPE ekpo-meins,
+         faturamento    TYPE ekbe-lfbnr,
+         exercicio      TYPE ekbe-lfgja,
+         doc_mat        TYPE ekbe-belnr.
+
+    DATA:doc_fatura TYPE TABLE OF rbkp.
+
+
+
+    CONSTANTS: c_x TYPE c VALUE 'X'.
+
+    METHODS:on_user_command FOR EVENT added_function OF cl_salv_events
+      IMPORTING e_salv_function,
+      change_dados
+        CHANGING
+          pedido_compra   TYPE ekko-ebeln
+          item            TYPE ekpo-ebelp
+          empresa         TYPE ekko-bukrs
+          moeda           TYPE ekko-waers
+          montante        TYPE ekbe-wrbtr
+          unidade         TYPE ekpo-meins
+          data_lancamento TYPE ekko-aedat
+          quantidade      TYPE ekpo-menge
+          exercicio       TYPE   ekbe-lfgja
+          faturamento     TYPE ekbe-lfbnr,
+      chamar_bapi
+        IMPORTING
+          pedido_compra   TYPE ekko-ebeln
+          item            TYPE ekpo-ebelp
+          tipo_mov        TYPE ekbe-bwart
+          material        TYPE ekpo-matnr
+          centro          TYPE ekpo-werks
+          deposito        TYPE ekpo-lgort
+          quantidade      TYPE ekpo-menge
+          lote            TYPE ekbe-charg
+          data_lancamento TYPE ekko-aedat,
+
+      chamar_bapi_miro
+        IMPORTING
+          pedido_compra   TYPE ekko-ebeln
+          item            TYPE ekpo-ebelp
+          empresa         TYPE ekko-bukrs
+          moeda           TYPE ekko-waers
+          montante        TYPE ekbe-wrbtr
+          unidade         TYPE ekpo-meins
+          data_lancamento TYPE ekko-aedat
+          quantidade      TYPE ekpo-menge
+          exercicio       TYPE   ekbe-lfgja
+          faturamento     TYPE ekbe-lfbnr
+          doc_mat         TYPE ekbe-belnr,
+      get_alv_instance,
+      set_tree_settings,
+      set_tree_status,
+      set_tree_event,
+      get_selected_rows
+        IMPORTING
+          columnname TYPE lvc_fname
+          salv_node  TYPE REF TO cl_salv_node
+        CHANGING
+          value      TYPE REF TO data,
+      get_dados,
+      get_dados_miro,
+      estornar_migo,
+      estornar_miro,
+      add_nodes
+        IMPORTING it_data TYPE tabela,
+      display_alv IMPORTING it_data TYPE tabela.
+
+ENDCLASS.
+
+CLASS report_view IMPLEMENTATION.
+
+  METHOD:change_dados.
+    me->chamar_bapi_miro(
+    pedido_compra = pedido_compra
+        item = item
+        faturamento = faturamento
+              exercicio = exercicio
+        empresa = empresa
+        moeda = codigo_m
+        montante = montante
+        unidade = unidade_medida
+        data_lancamento = data_lancamento
+        quantidade = quantidade
+        doc_mat = doc_mat
+     ).
+  ENDMETHOD.
+  METHOD:estornar_migo.
+
+    DATA: lv_mblnr      TYPE mblnr,   "Número do documento de material
+          lv_mjahr      TYPE mjahr,   "Ano do documento de material
+          lv_budat      TYPE budat,  "Data de lançamento
+          lv_headret    TYPE bapi2017_gm_head_ret,
+          it_return     TYPE STANDARD TABLE OF bapiret2,
+          it_matdocitem TYPE TABLE OF bapi2017_gm_item_create.
+
+*    lv_mblnr = doc_mat.     "Substitua pelo número do documento de material
+*    lv_mjahr = exercicio.           "Substitua pelo ano do documento de material
+*    lv_budat = data_lancamento.        "Data de lançamento (pode ser a data atual)
+
+
+        CALL FUNCTION 'BAPI_GOODSMVT_CANCEL'
+          EXPORTING
+            materialdocument    = doc_mat
+            matdocumentyear     = exercicio
+            goodsmvt_pstng_date = data_lancamento
+            goodsmvt_pr_uname   = sy-uname
+          IMPORTING
+            goodsmvt_headret    = lv_headret
+          TABLES
+            return              = it_return.
+*        goodsmvt_matdocitem = it_matdocitem.
+
+        LOOP AT it_return INTO DATA(wa_ret).
+          IF wa_ret-type = 'E'.
+
+            MESSAGE: wa_ret-message TYPE 'S'.
+          ENDIF.
+        ENDLOOP.
+
+        IF it_return IS INITIAL.
+          CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+            EXPORTING
+              wait = 'X'.
+          MESSAGE: 'Estorno realizado com sucesso' TYPE 'I'.
+        ELSE.
+          CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+          WRITE: 'Erro ao realizar o estorno'.
+        ENDIF.
+*    ELSE.
+*      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+*      WRITE: 'Erro ao realizar o estorno'.
+
+    BREAK-POINT.
+
+
+
+
+
+  ENDMETHOD.
+
+  METHOD:estornar_miro.
+
+    DATA:doc_fatura TYPE TABLE OF rbkp.
+
+*
+    SELECT xblnr FROM rbkp INTO CORRESPONDING FIELDS OF TABLE doc_fatura.
+
+    BREAK-POINT.
+*
+
+    LOOP AT doc_fatura INTO DATA(ls_table).
+      IF ls_table-xblnr EQ doc_mat.
+        SET PARAMETER ID 'RBN' FIELD ls_table-belnr.
+      ENDIF.
+    ENDLOOP.
+
+    SET PARAMETER ID 'GJR' FIELD exercicio.
+    SET PARAMETER ID 'FSG' FIELD '01'.
+    CALL TRANSACTION 'MR8M' WITHOUT AUTHORITY-CHECK AND SKIP FIRST SCREEN.
+
+
+
+  ENDMETHOD.
+
+
+  METHOD:chamar_bapi.
+    DATA: lt_mmdochdr TYPE TABLE OF bapi2017_gm_head_01,
+          ls_mmdochdr TYPE bapi2017_gm_head_01,
+          lt_gm       TYPE STANDARD TABLE OF bapi2017_gm_item_create,
+          ls_gm       TYPE bapi2017_gm_item_create,
+          lt_ret      TYPE STANDARD TABLE OF bapiret2,
+          ls_ret      TYPE bapiret2,
+          ls_hdr      TYPE bapi2017_gm_head_ret,
+          ls_ser      TYPE bapi2017_gm_serialnumber,
+          lt_ser      TYPE  STANDARD TABLE OF bapi2017_gm_serialnumber.
+
+
+*    EKBE - bwart
+
+*    *as.
+
+    ls_gm-move_type = tipo_mov.
+
+*EKPO - MATNR
+    ls_gm-material = material.
+
+*    EKBE - WERKS
+    ls_gm-plant = centro.
+
+*EKPO - LGORT
+    ls_gm-stge_loc = deposito.
+
+
+*EKBE - MENGE
+
+    ls_gm-entry_qnt = quantidade.
+
+*    EKBE - CHARG
+    ls_gm-batch = lote.
+
+*    *as.
+
+    ls_gm-mvt_ind = 'B'.
+
+    ls_gm-po_number = pedido_compra.
+
+    ls_gm-po_item = item.
+
+    ls_gm-item_text = 'sdhsahjg'.
+
+
+    APPEND ls_gm TO lt_gm.
+    CLEAR ls_gm.
+
+
+    ls_mmdochdr-pstng_date = data_lancamento.
+    ls_mmdochdr-doc_date = sy-datum.
+*    APPEND ls_mmdochdr TO lt_mmdochdr.
+
+*    BREAK-POINT.
+
+    CALL FUNCTION 'BAPI_GOODSMVT_CREATE'
+      EXPORTING
+        goodsmvt_header  = ls_mmdochdr
+        goodsmvt_code    = '01'
+      IMPORTING
+        goodsmvt_headret = ls_hdr
+      TABLES
+        goodsmvt_item    = lt_gm
+        return           = lt_ret.
+
+*    *as.
+
+    IF lt_ret IS INITIAL.
+      MESSAGE: 'Material Document posted' TYPE 'I'.
+      doc_mat = ls_hdr-mat_doc.
+*      'Material Document posted:', ls_hdr-mat_doc, ' ', ls_hdr-doc_year
+
+      BREAK-POINT.
+
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+        EXPORTING
+          wait = 'X'.
+*   Alternative COMMIT WORK.
+    ELSE.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+*   Alternative ROLLBACK WORK.
+      WRITE: 'Error during posting Material document:', /.
+      LOOP AT lt_ret INTO ls_ret.
+
+        MESSAGE ls_ret-message TYPE 'I'.
+      ENDLOOP.
+
+    ENDIF.
+
+
+*    *as.
+
+
+  ENDMETHOD.
+
+  METHOD:chamar_bapi_miro.
+    DATA: it_header TYPE TABLE OF bapi_incinv_create_header,
+          st_header TYPE bapi_incinv_create_header,
+          it_item   TYPE STANDARD TABLE OF bapi_incinv_create_item,
+          it_gl     TYPE TABLE OF bapi_incinv_create_gl_account,
+          st_item   TYPE bapi_incinv_create_item,
+          it_ret    TYPE STANDARD TABLE OF bapiret2.
+
+*    DATA: inv_doc_no  TYPE bapi_incinv_fld-inv_doc_no,
+*          fiscal_year TYPE bapi_incinv_fld-fisc_year.
+*
+*
+*    CLEAR: it_header, it_item, it_gl.
+*
+    st_header-invoice_ind = 'X'.
+    st_header-ref_doc_no = doc_mat.
+    st_header-comp_code = empresa.
+    st_header-doc_date = sy-datum.
+    st_header-pstng_date = data_lancamento.
+    st_header-currency = moeda.
+    st_header-gross_amount = montante.
+    st_header-ref_doc_no = doc_mat.
+    st_header-doc_date = sy-datum.
+    st_header-invoice_ind = 'X'.
+    st_header-pmnttrms = '0001'.
+
+
+    st_item-item_amount = montante.
+    st_item-quantity = quantidade.
+    st_item-po_unit = unidade.
+    st_item-po_number = pedido_compra.
+    st_item-po_item = item.
+    st_item-invoice_doc_item = doc_mat.
+    st_item-tax_code = 'I1'.
+    APPEND st_item TO it_item.
+
+
+    CALL FUNCTION 'BAPI_INCOMINGINVOICE_CREATE'
+      EXPORTING
+        headerdata = st_header       " Header Data in Incoming Invoice (Create)
+      TABLES
+        itemdata   = it_item      " Item Data in Incoming Invoice
+        return     = it_ret.
+
+    LOOP AT it_ret INTO DATA(ls_ret).
+
+      MESSAGE ls_ret-message TYPE 'I'.
+
+    ENDLOOP.
+
+    IF it_ret IS INITIAL.
+
+*      BREAK-POINT.
+      LOOP AT it_ret INTO ls_ret.
+
+        MESSAGE ls_ret-message TYPE 'I'.
+
+      ENDLOOP.
+
+      CLEAR it_ret[].
+      CLEAR it_item[].
+
+      MESSAGE | Transação efetuada com sucesso! :) | TYPE 'I'.
+
+
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+*        EXPORTING
+*          wait   =                  " Use of Command `COMMIT AND WAIT`
+*        IMPORTING
+*          return =                  " Return Messages
+        .
+    ELSE.
+      "Caso erro
+
+      LOOP AT it_ret INTO ls_ret.
+
+        MESSAGE ls_ret-message TYPE 'I'.
+
+      ENDLOOP.
+
+      CLEAR it_ret[].
+      CLEAR it_item[].
+
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'
+*        IMPORTING
+*          return =                  " Return Messages
+        .
+
+    ENDIF.
+
+
+
+
+    CLEAR it_ret[].
+    CLEAR it_item[].
+
+
+
+
+  ENDMETHOD.
+
+
+  METHOD: on_user_command.
+    CASE e_salv_function.
+      WHEN '&ALL'.
+      WHEN '&SAL'.
+      WHEN '&GMG'.
+        me->get_dados( ).
+      WHEN '&GMR'.
+        me->get_dados_miro( ).
+      WHEN '&ESTMG'.
+        me->estornar_migo( ).
+      WHEN '&ESTMR'.
+        me->estornar_miro( ).
+    ENDCASE.
+  ENDMETHOD.
+
+  METHOD:set_tree_settings.
+    obj_settings = obj_tree->get_tree_settings( ).
+
+    obj_settings->set_header( 'ALV TREE' ).
+    obj_settings->set_hierarchy_header( 'Dados' ).
+    obj_settings->set_hierarchy_tooltip( 'Fornecedores' ).
+    obj_settings->set_hierarchy_size( 30 ).
+    obj_settings->set_hierarchy_icon( '@4B@' ).
+
+
+  ENDMETHOD.
+  METHOD: set_tree_status.
+
+    obj_tree->set_screen_status(
+    report = sy-repid
+    pfstatus = 'STANDARD'
+    set_functions = obj_tree->c_functions_all
+    ).
+  ENDMETHOD.
+  METHOD:  set_tree_event.
+
+    obj_events = obj_tree->get_event( ).
+    SET HANDLER me->on_user_command FOR obj_events.
+  ENDMETHOD.
+  METHOD:add_nodes.
+    obj_nodes  = obj_tree->get_nodes( ).
+
+    DATA:lt_lifnr TYPE TABLE OF ekko-lifnr,
+         ls_lifnr TYPE ekko-lifnr.
+
+
+
+
+    LOOP AT it_data INTO DATA(wa_data).
+      DATA: lv_text        TYPE lvc_value,
+            lv_text_compra TYPE lvc_value.
+
+      CONCATENATE: 'Fornecedor' wa_data-lifnr INTO lv_text SEPARATED BY space.
+
+      READ TABLE lt_lifnr INTO ls_lifnr WITH KEY table_line = wa_data-lifnr.
+      IF sy-subrc <> 0.
+
+        APPEND wa_data-lifnr TO lt_lifnr.
+
+*        wa_data-ebeln = ' '.
+*        wa_data-ebelp = ' '.
+*        wa_data-waers = ' '.
+*        wa_data-bukrs = ' '.
+*        wa_data-lgort = ' '.
+*        wa_data-charg = ' '.
+
+
+        DATA(obj_node) = obj_nodes->add_node(
+        related_node = ' '
+*        text = lv_text
+  text = 'Fornecedor'
+        data_row = wa_data
+        relationship = cl_gui_column_tree=>relat_first_child
+        ).
+
+        DATA(lv_compradoc_key) = obj_node->get_key( ).
+
+      ENDIF.
+
+*      CLEAR wa_blank.
+*
+*      wa_blank-ebeln = wa_data-ebeln.
+
+      CONCATENATE 'N° Pedido' wa_data-ebeln INTO lv_text_compra SEPARATED BY space.
+
+      obj_node = obj_nodes->add_node(
+      related_node = lv_compradoc_key
+      text = 'Pedido de Compra'
+*      text = lv_text_compra
+      data_row = wa_data
+      relationship = cl_gui_column_tree=>relat_first_child
+      ).
+
+
+
+
+*      *as.
+
+*      DATA(lv_pedidocompra_key) = obj_node->get_key( ).
+*
+*      obj_node = obj_nodes->add_node(
+*      related_node = lv_pedidocompra_key
+*      text = 'Pedido de Compra'
+*      data_row = wa_data
+*      relationship = cl_gui_column_tree=>relat_first_child
+*      ).
+
+      DATA(lv_item_key) = obj_node->get_key( ).
+
+*      CLEAR wa_blank.
+
+*      wa_blank-bwart = wa_data-bwart.
+
+      obj_node = obj_nodes->add_node(
+   related_node = lv_item_key
+   text = 'Item'
+   data_row = wa_data
+   relationship = cl_gui_column_tree=>relat_first_child
+   ).
+
+      DATA(lv_mov_key) = obj_node->get_key( ).
+
+      obj_node = obj_nodes->add_node(
+related_node = lv_mov_key
+text = 'Tipo Mov'
+data_row = wa_data
+relationship = cl_gui_column_tree=>relat_first_child
+).
+
+*      *as.
+
+      DATA(lv_material_key) = obj_node->get_key( ).
+
+*      CLEAR wa_blank.
+*
+*      wa_blank-matnr = wa_data-matnr.
+
+
+      obj_node = obj_nodes->add_node(
+related_node = lv_material_key
+text = 'Material'
+data_row = wa_data
+relationship = cl_gui_column_tree=>relat_first_child
+).
+
+      DATA(lv_centro_key) = obj_node->get_key( ).
+
+*      CLEAR wa_blank.
+*
+*      wa_blank-werks = wa_data-werks.
+
+      obj_node = obj_nodes->add_node(
+related_node = lv_centro_key
+text = 'Centro'
+data_row = wa_data
+relationship = cl_gui_column_tree=>relat_first_child
+).
+
+      DATA(lv_deposito_key) = obj_node->get_key( ).
+
+*      CLEAR wa_blank.
+*
+*      wa_blank-lgort = wa_data-lgort.
+
+      obj_node = obj_nodes->add_node(
+related_node = lv_deposito_key
+text = 'Deposito'
+data_row = wa_data
+relationship = cl_gui_column_tree=>relat_first_child
+).
+
+      DATA(lv_qtd_key) = obj_node->get_key( ).
+
+*      CLEAR wa_blank.
+*
+**      wa_blank-menge = wa_data-menge.
+
+      obj_node = obj_nodes->add_node(
+related_node = lv_qtd_key
+text = 'Quantidade'
+data_row = wa_data
+relationship = cl_gui_column_tree=>relat_first_child
+).
+
+      DATA(lv_lote_key) = obj_node->get_key( ).
+
+*      CLEAR wa_blank.
+*
+*      wa_blank-charg = wa_data-charg.
+
+      obj_node = obj_nodes->add_node(
+related_node = lv_lote_key
+text = 'Lote'
+data_row = wa_data
+relationship = cl_gui_column_tree=>relat_first_child
+).
+
+      DATA(lv_data_lan_key) = obj_node->get_key( ).
+
+      obj_node = obj_nodes->add_node(
+related_node = lv_data_lan_key
+text = 'Data lançamento'
+data_row = wa_data
+relationship = cl_gui_column_tree=>relat_first_child
+).
+
+      DATA(lv_empresa_key) = obj_node->get_key( ).
+
+      obj_node = obj_nodes->add_node(
+related_node = lv_empresa_key
+text = 'Empresa'
+data_row = wa_data
+relationship = cl_gui_column_tree=>relat_first_child
+).
+
+
+
+      DATA(lv_codigo_moeda_key) = obj_node->get_key( ).
+
+      obj_node = obj_nodes->add_node(
+related_node = lv_codigo_moeda_key
+text = 'Codigo Moeda'
+data_row = wa_data
+relationship = cl_gui_column_tree=>relat_first_child
+).
+
+      DATA(lv_montante_key) = obj_node->get_key( ).
+
+      obj_node = obj_nodes->add_node(
+related_node = lv_montante_key
+text = 'Montante'
+data_row = wa_data
+relationship = cl_gui_column_tree=>relat_first_child
+).
+
+      DATA(lv_unidade_medida_key) = obj_node->get_key( ).
+
+      obj_node = obj_nodes->add_node(
+related_node = lv_unidade_medida_key
+text = 'Unidade de Medida'
+data_row = wa_data
+relationship = cl_gui_column_tree=>relat_first_child
+).
+
+      DATA(lv_exercicio_key) = obj_node->get_key( ).
+
+      obj_node = obj_nodes->add_node(
+related_node = lv_exercicio_key
+text = 'Exercicio'
+data_row = wa_data
+relationship = cl_gui_column_tree=>relat_first_child
+).
+
+      DATA(lv_faturamento_key) = obj_node->get_key( ).
+
+      obj_node = obj_nodes->add_node(
+related_node = lv_faturamento_key
+text = 'Faturamento'
+data_row = wa_data
+relationship = cl_gui_column_tree=>relat_first_child
+).
+
+      DATA(lv_doc_mat_key) = obj_node->get_key( ).
+
+      obj_node = obj_nodes->add_node(
+related_node = lv_doc_mat_key
+text = 'Documento Material'
+data_row = wa_data
+relationship = cl_gui_column_tree=>relat_first_child
+).
+
+
+
+*      *as.
+
+
+*      me->chamar_bapi( tipo_mov = wa_blank-bwart
+*      material = wa_blank-matnr
+*      centro = wa_blank-werks
+*      deposito = wa_blank-lgort
+*      quantidade = wa_blank-menge
+*      lote = wa_blank-charg
+*      ).
+
+**as.
+
+
+
+*      me->chamar_bapi( tipo_mov = wa_data-bwart
+*        material = wa_data-matnr
+*        centro = wa_data-werks
+*        deposito = wa_data-lgort
+*        quantidade = wa_data-menge
+*        lote = wa_data-charg
+*        ).
+
+*      *as.
+
+
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD:get_dados.
+
+    DATA:n_compra         TYPE REF TO data,
+         n_fornecedor     TYPE REF TO data,
+         n_item           TYPE REF TO data,
+         n_data           TYPE REF TO data,
+         n_bwart          TYPE REF TO data,
+         n_matnr          TYPE REF TO data,
+         n_werks          TYPE REF TO data,
+         n_charg          TYPE REF TO data,
+         n_lgort          TYPE REF TO data,
+         n_menge          TYPE REF TO data,
+         n_aedat          TYPE REF TO data,
+         n_empresa        TYPE REF TO data,
+         n_codigo_moeda   TYPE REF TO data,
+         n_montante       TYPE REF TO data,
+         n_unidade_medida TYPE REF TO data,
+         n_exercicio      TYPE REF TO data,
+         n_faturamento    TYPE REF TO data,
+         n_doc_mat        TYPE REF TO data,
+
+         count            TYPE i.
+    count = 0.
+
+
+    salv_selection = obj_tree->get_selections( ).
+    obj_nodes = obj_tree->get_nodes( ).
+
+    lt_selected_nodes = salv_selection->get_selected_nodes( ).
+
+    IF lt_selected_nodes[] IS INITIAL.
+      MESSAGE 'Selecione um Pedido de Compra para poder seguir' TYPE 'I'.
+
+    ELSE.
+
+*      BREAK-POINT.
+
+      LOOP AT lt_selected_nodes INTO ls_selected_nodes.
+
+        TRY.
+*            IF ls_selected_nodes-node->get_text( ) EQ 'Fornecedor'.
+            IF ls_selected_nodes-node->get_text( ) EQ 'Pedido de Compra'.
+              ls_selected_nodes-node->expand( complete_subtree = abap_false ).
+
+              obj_node = ls_selected_nodes-node->get_parent( ).
+              me->get_selected_rows( EXPORTING columnname = 'LIFNR'
+                                            salv_node = obj_node
+                                  CHANGING  value = n_fornecedor ).
+*
+*              me->get_selected_rows( EXPORTING columnname = 'LIFNR'
+*                                            salv_node = ls_selected_nodes-node
+*                                  CHANGING  value = n_fornecedor ).
+
+
+
+
+              DATA(compras) = ls_selected_nodes-node->get_children( ).
+
+              "Loop em cada documento de compra do funcionário selecionado
+              LOOP AT compras INTO ls_selected_nodes.
+                ls_selected_nodes-node->expand( ).
+
+                me->get_selected_rows( EXPORTING columnname = 'EBELN'
+                                              salv_node = ls_selected_nodes-node
+                                    CHANGING  value = n_compra ).
+*
+
+*         s_compra = n_compra.
+
+*            me->get_selected_rows( EXPORTING columnname = 'BEDAT'
+*                                          salv_node = ls_selected_nodes-node
+*                                CHANGING  value = n_data ).
+*         s_data = n_data.
+
+                DATA(itens) = ls_selected_nodes-node->get_children( ).
+
+                "Loop em cada item do documento de compra
+                LOOP AT itens INTO ls_selected_nodes.
+
+                  me->get_selected_rows( EXPORTING columnname = 'EBELP'
+                                                salv_node = ls_selected_nodes-node
+                                      CHANGING  value = n_item ).
+
+
+
+                  count = count + 1.
+                ENDLOOP.
+
+                DATA(lotes) = ls_selected_nodes-node->get_children( ).
+
+                LOOP AT lotes INTO ls_selected_nodes.
+
+                  me->get_selected_rows( EXPORTING columnname = 'CHARG'
+            salv_node = ls_selected_nodes-node
+            CHANGING value = n_charg ).
+                ENDLOOP.
+
+                DATA(materiais) = ls_selected_nodes-node->get_children( ).
+
+                LOOP AT materiais INTO ls_selected_nodes.
+
+                  me->get_selected_rows( EXPORTING columnname = 'MATNR'
+            salv_node = ls_selected_nodes-node
+            CHANGING value = n_matnr ).
+                ENDLOOP.
+
+
+                DATA(centros) = ls_selected_nodes-node->get_children( ).
+
+                LOOP AT centros INTO ls_selected_nodes.
+
+                  me->get_selected_rows( EXPORTING columnname = 'WERKS'
+            salv_node = ls_selected_nodes-node
+            CHANGING value = n_werks ).
+                ENDLOOP.
+
+                DATA(quantidades) = ls_selected_nodes-node->get_children( ).
+
+                LOOP AT quantidades INTO ls_selected_nodes.
+
+                  me->get_selected_rows( EXPORTING columnname = 'MENGE'
+            salv_node = ls_selected_nodes-node
+            CHANGING value = n_menge ).
+                ENDLOOP.
+
+                DATA(depositos) = ls_selected_nodes-node->get_children( ).
+
+                LOOP AT depositos INTO ls_selected_nodes.
+*
+                  me->get_selected_rows( EXPORTING columnname = 'LGORT'
+            salv_node = ls_selected_nodes-node
+            CHANGING value = n_lgort ).
+                ENDLOOP.
+
+                DATA(tipo_movs) = ls_selected_nodes-node->get_children( ).
+
+                LOOP AT tipo_movs INTO ls_selected_nodes.
+
+                  me->get_selected_rows( EXPORTING columnname = 'BWART'
+            salv_node = ls_selected_nodes-node
+            CHANGING value = n_bwart ).
+                ENDLOOP.
+
+
+              ENDLOOP.
+
+
+
+
+
+              DATA(data_lan) = ls_selected_nodes-node->get_children( ).
+
+              LOOP AT data_lan INTO ls_selected_nodes.
+
+                me->get_selected_rows( EXPORTING columnname = 'AEDAT'
+          salv_node = ls_selected_nodes-node
+          CHANGING value = n_aedat ).
+              ENDLOOP.
+
+              DATA(empresas) = ls_selected_nodes-node->get_children( ).
+
+              LOOP AT empresas INTO ls_selected_nodes.
+
+                me->get_selected_rows( EXPORTING columnname = 'BUKRS'
+          salv_node = ls_selected_nodes-node
+          CHANGING value = n_empresa ).
+              ENDLOOP.
+
+
+              DATA(codigo_moeda) = ls_selected_nodes-node->get_children( ).
+
+              LOOP AT codigo_moeda INTO ls_selected_nodes.
+
+                me->get_selected_rows( EXPORTING columnname = 'WAERS'
+          salv_node = ls_selected_nodes-node
+          CHANGING value = n_codigo_moeda ).
+              ENDLOOP.
+
+              DATA(montantes) = ls_selected_nodes-node->get_children( ).
+
+              LOOP AT montantes INTO ls_selected_nodes.
+
+                me->get_selected_rows( EXPORTING columnname = 'WRBTR'
+          salv_node = ls_selected_nodes-node
+          CHANGING value = n_montante ).
+              ENDLOOP.
+
+              DATA(unidadesmedida) = ls_selected_nodes-node->get_children( ).
+
+              LOOP AT unidadesmedida INTO ls_selected_nodes.
+
+                me->get_selected_rows( EXPORTING columnname = 'MEINS'
+          salv_node = ls_selected_nodes-node
+          CHANGING value = n_unidade_medida ).
+              ENDLOOP.
+
+              DATA(exercicios) = ls_selected_nodes-node->get_children( ).
+
+              LOOP AT exercicios INTO ls_selected_nodes.
+
+                me->get_selected_rows( EXPORTING columnname = 'LFGJA'
+          salv_node = ls_selected_nodes-node
+          CHANGING value = n_exercicio ).
+              ENDLOOP.
+
+
+              DATA(faturamentos) = ls_selected_nodes-node->get_children( ).
+
+              LOOP AT faturamentos INTO ls_selected_nodes.
+
+                me->get_selected_rows( EXPORTING columnname = 'LFBNR'
+          salv_node = ls_selected_nodes-node
+          CHANGING value = n_faturamento ).
+              ENDLOOP.
+
+              DATA(docs_mat) = ls_selected_nodes-node->get_children( ).
+
+              LOOP AT docs_mat INTO ls_selected_nodes.
+                me->get_selected_rows( EXPORTING columnname = 'BELNR'
+                        salv_node = ls_selected_nodes-node
+          CHANGING value = n_doc_mat ).
+              ENDLOOP.
+
+
+
+              CLEAR ls_selected_nodes.
+
+            ELSEIF ls_selected_nodes-node->get_text( ) NE 'Pedido de Compra'.
+
+              CLEAR ls_selected_nodes.
+              MESSAGE | Selecione um Pedido de Compra | TYPE 'E'.
+
+              count = count + 1.
+
+*            ELSE.
+*              MESSAGE 'Selecione um Item para seguir' TYPE 'S'.
+            ENDIF.
+
+          CATCH cx_salv_msg.
+
+        ENDTRY.
+
+
+      ENDLOOP.
+
+
+
+
+*-----Campo de Passar Dados-------
+
+*-------------MIGO-----------------
+
+      FIELD-SYMBOLS: <fs_bwart> TYPE any.
+      FIELD-SYMBOLS: <fs_matnr> TYPE any.
+      FIELD-SYMBOLS: <fs_werks> TYPE any.
+      FIELD-SYMBOLS: <fs_lgort> TYPE any.
+      FIELD-SYMBOLS: <fs_menge> TYPE any.
+      FIELD-SYMBOLS: <fs_charg> TYPE any.
+      FIELD-SYMBOLS: <fs_aedat> TYPE any.
+      FIELD-SYMBOLS: <fs_ebeln> TYPE any.
+      FIELD-SYMBOLS: <fs_ebelp> TYPE any.
+
+      ASSIGN n_compra->* TO <fs_ebeln>.
+      pedido_compra = <fs_ebeln>.
+*
+*    BREAK-POINT.
+
+      ASSIGN n_item->* TO <fs_ebelp>.
+      item = <fs_ebelp>.
+
+      ASSIGN n_bwart->* TO <fs_bwart>.
+      tipo_mov = <fs_bwart>.
+
+
+      ASSIGN n_matnr->* TO <fs_matnr>.
+      material = <fs_matnr>.
+
+
+      ASSIGN n_werks->* TO <fs_werks>.
+      centro = <fs_werks>.
+
+
+      ASSIGN n_menge->* TO <fs_menge>.
+      quantidade = <fs_menge>.
+
+*               BREAK-POINT.
+
+
+
+      ASSIGN n_lgort->* TO <fs_lgort>.
+      deposito = <fs_lgort>.
+
+
+      ASSIGN n_charg->* TO <fs_charg>.
+      lote = <fs_charg>.
+
+
+      ASSIGN n_aedat->* TO <fs_aedat>.
+      data_lancamento = <fs_aedat>.
+
+
+
+*------------------------MIRO------------------
+
+      FIELD-SYMBOLS:<fs_bukrs> TYPE any.
+      FIELD-SYMBOLS:<fs_waers> TYPE any.
+      FIELD-SYMBOLS:<fs_wrbtr> TYPE any.
+      FIELD-SYMBOLS:<fs_meins> TYPE any.
+      FIELD-SYMBOLS:<fs_lfgja> TYPE any.
+      FIELD-SYMBOLS:<fs_lfbnr> TYPE any.
+      FIELD-SYMBOLS:<fs_belnr> TYPE any.
+
+
+      ASSIGN n_empresa->* TO <fs_bukrs>.
+      empresa = <fs_bukrs>.
+
+*    BREAK-POINT.
+
+
+      ASSIGN n_codigo_moeda->* TO <fs_waers>.
+      codigo_m = <fs_waers>.
+
+      ASSIGN n_montante->* TO <fs_wrbtr>.
+      montante = <fs_wrbtr>.
+
+      ASSIGN n_unidade_medida->* TO <fs_meins>.
+      unidade_medida = <fs_meins>.
+
+      ASSIGN n_exercicio->* TO <fs_lfgja>.
+      exercicio = <fs_lfgja>.
+
+      ASSIGN n_faturamento->* TO <fs_lfbnr>.
+      faturamento = <fs_lfbnr>.
+*
+      IF n_doc_mat IS NOT INITIAL.
+        ASSIGN n_doc_mat->* TO <fs_belnr>.
+        IF sy-subrc = 0.
+          doc_mat = <fs_belnr>.
+        ENDIF.
+      ELSE.
+        CLEAR doc_mat.
+      ENDIF.
+
+
+      IF lt_selected_nodes[] IS NOT INITIAL.
+
+        me->chamar_bapi( pedido_compra = pedido_compra
+        item = item
+        tipo_mov = tipo_mov
+          material = material
+          centro = centro
+          deposito = deposito
+          quantidade = quantidade
+          lote = lote
+          data_lancamento = data_lancamento
+          ).
+
+*      me->chamar_bapi_miro(
+*      pedido_compra = pedido_compra
+*      item = item
+*      faturamento = faturamento
+*            exercicio = exercicio
+*      empresa = empresa
+*      moeda = codigo_m
+*      montante = montante
+*      unidade = unidade_medida
+*      data_lancamento = data_lancamento
+*      quantidade = quantidade ).
+
+*      *as.
+
+*      IF sy-subrc EQ 0.
+
+
+*      me->change_dados(
+*      CHANGING
+*        pedido_compra = pedido_compra
+*        item = item
+*        faturamento = faturamento
+*        exercicio = exercicio
+*        empresa = empresa
+*        moeda = codigo_m
+*        montante = montante
+*        unidade = unidade_medida
+*        data_lancamento = data_lancamento
+*        quantidade = quantidade
+*        ).
+**
+*      ENDIF.
+
+*      *as.
+
+
+      ENDIF.
+
+
+
+
+
+
+
+
+
+
+
+*
+*
+**------------------------MIGO------------------
+**    DATA: pedido_compra   TYPE ekko-ebeln,
+**          item            TYPE ekpo-ebelp,
+**          tipo_mov        TYPE ekbe-bwart,
+**          material        TYPE ekpo-matnr,
+**          centro          TYPE ekpo-werks,
+**          deposito        TYPE ekpo-lgort,
+**          quantidade      TYPE ekpo-menge,
+**          lote            TYPE ekbe-charg,
+**          data_lancamento TYPE ekko-aedat.
+*
+*    FIELD-SYMBOLS: <fs_bwart> TYPE any.
+*    FIELD-SYMBOLS: <fs_matnr> TYPE any.
+*    FIELD-SYMBOLS: <fs_werks> TYPE any.
+*    FIELD-SYMBOLS: <fs_lgort> TYPE any.
+*    FIELD-SYMBOLS: <fs_menge> TYPE any.
+*    FIELD-SYMBOLS: <fs_charg> TYPE any.
+*    FIELD-SYMBOLS: <fs_aedat> TYPE any.
+*    FIELD-SYMBOLS: <fs_ebeln> TYPE any.
+*    FIELD-SYMBOLS: <fs_ebelp> TYPE any.
+*
+*    ASSIGN n_compra->* TO <fs_ebeln>.
+*    pedido_compra = <fs_ebeln>.
+**
+**    BREAK-POINT.
+*
+*    ASSIGN n_item->* TO <fs_ebelp>.
+*    item = <fs_ebelp>.
+*
+*    ASSIGN n_bwart->* TO <fs_bwart>.
+*    tipo_mov = <fs_bwart>.
+*
+*
+*    ASSIGN n_matnr->* TO <fs_matnr>.
+*    material = <fs_matnr>.
+*
+*
+*    ASSIGN n_werks->* TO <fs_werks>.
+*    centro = <fs_werks>.
+*
+*
+*    ASSIGN n_menge->* TO <fs_menge>.
+*    quantidade = <fs_menge>.
+*
+*               BREAK-POINT.
+*
+*
+*
+*    ASSIGN n_lgort->* TO <fs_lgort>.
+*    deposito = <fs_lgort>.
+*
+*
+*    ASSIGN n_charg->* TO <fs_charg>.
+*    lote = <fs_charg>.
+*
+*
+*    ASSIGN n_aedat->* TO <fs_aedat>.
+*    data_lancamento = <fs_aedat>.
+*
+*
+*
+**------------------------MIRO------------------
+*
+**    DATA:empresa        TYPE ekko-bukrs,
+**         codigo_m       TYPE ekko-waers,
+**         montante       TYPE ekbe-wrbtr,
+**         unidade_medida TYPE ekbe-lsmeh,
+**         faturamento    TYPE ekbe-lfbnr,
+**         exercicio      TYPE ekbe-lfgja.
+*
+*    FIELD-SYMBOLS:<fs_bukrs> TYPE any.
+*    FIELD-SYMBOLS:<fs_waers> TYPE any.
+*    FIELD-SYMBOLS:<fs_wrbtr> TYPE any.
+*    FIELD-SYMBOLS:<fs_meins> TYPE any.
+*    FIELD-SYMBOLS:<fs_lfgja> TYPE any.
+*    FIELD-SYMBOLS:<fs_lfbnr> TYPE any.
+*    FIELD-SYMBOLS:<fs_belnr> TYPE any.
+*
+*
+*    ASSIGN n_empresa->* TO <fs_bukrs>.
+*    empresa = <fs_bukrs>.
+*
+**    BREAK-POINT.
+*
+*
+*    ASSIGN n_codigo_moeda->* TO <fs_waers>.
+*    codigo_m = <fs_waers>.
+*
+*    ASSIGN n_montante->* TO <fs_wrbtr>.
+*    montante = <fs_wrbtr>.
+*
+*    ASSIGN n_unidade_medida->* TO <fs_meins>.
+*    unidade_medida = <fs_meins>.
+*
+*    ASSIGN n_exercicio->* TO <fs_lfgja>.
+*    exercicio = <fs_lfgja>.
+*
+*    ASSIGN n_faturamento->* TO <fs_lfbnr>.
+*    faturamento = <fs_lfbnr>.
+**
+*    IF n_doc_mat IS NOT INITIAL.
+*      ASSIGN n_doc_mat->* TO <fs_belnr>.
+*      IF sy-subrc = 0.
+*        doc_mat = <fs_belnr>.
+*      ENDIF.
+*    ELSE.
+*      CLEAR doc_mat.
+*    ENDIF.
+*
+*
+*    IF lt_selected_nodes[] IS NOT INITIAL.
+*
+*      me->chamar_bapi( pedido_compra = pedido_compra
+*      item = item
+*      tipo_mov = tipo_mov
+*        material = material
+*        centro = centro
+*        deposito = deposito
+*        quantidade = quantidade
+*        lote = lote
+*        data_lancamento = data_lancamento
+*        ).
+*
+**      me->chamar_bapi_miro(
+**      pedido_compra = pedido_compra
+**      item = item
+**      faturamento = faturamento
+**            exercicio = exercicio
+**      empresa = empresa
+**      moeda = codigo_m
+**      montante = montante
+**      unidade = unidade_medida
+**      data_lancamento = data_lancamento
+**      quantidade = quantidade ).
+*
+**      *as.
+*
+**      IF sy-subrc EQ 0.
+*
+*
+**      me->change_dados(
+**      CHANGING
+**        pedido_compra = pedido_compra
+**        item = item
+**        faturamento = faturamento
+**        exercicio = exercicio
+**        empresa = empresa
+**        moeda = codigo_m
+**        montante = montante
+**        unidade = unidade_medida
+**        data_lancamento = data_lancamento
+**        quantidade = quantidade
+**        ).
+***
+**      ENDIF.
+*
+**      *as.
+
+
+
+    ENDIF.
+
+
+
+  ENDMETHOD.
+
+  METHOD:get_dados_miro.
+
+
+    me->chamar_bapi_miro(
+    pedido_compra = pedido_compra
+    item = item
+    faturamento = faturamento
+          exercicio = exercicio
+    empresa = empresa
+    moeda = codigo_m
+    montante = montante
+    unidade = unidade_medida
+    data_lancamento = data_lancamento
+    quantidade = quantidade
+    doc_mat = doc_mat ).
+
+  ENDMETHOD.
+
+  METHOD:get_selected_rows.
+    TRY.
+        salv_item = salv_node->get_item( columnname = columnname ).
+        value = salv_item->get_value( ).
+      CATCH cx_salv_msg.
+    ENDTRY.
+
+  ENDMETHOD.
+
+  METHOD get_alv_instance.
+
+*    tabela_exportada = it_data.
+
+    TRY.
+        CALL METHOD cl_salv_tree=>factory
+          IMPORTING
+            r_salv_tree = obj_tree
+          CHANGING
+            t_table     = tabela_exportada.
+
+      CATCH cx_salv_error.
+    ENDTRY.
+
+*    *as.
+
+  ENDMETHOD.
+
+
+  METHOD:display_alv.
+
+    me->get_alv_instance( ).
+
+    me->set_tree_event( ).
+
+    me->set_tree_status( ).
+
+    me->set_tree_settings( ).
+
+    me->add_nodes( it_data ).
+
+    obj_tree->display( ).
+
+*    .
+
+  ENDMETHOD.
+ENDCLASS.

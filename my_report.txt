@@ -1,0 +1,25 @@
+*&---------------------------------------------------------------------*
+*& Report YDESAFIOYUYU_GF
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT ydesafioyuyu_gf.
+TABLES:ekko,ekpo,rbkp.
+INCLUDE ygf_in_report_screen_y.
+INCLUDE ygf_in_report_model_y.
+INCLUDE ygf_in_report_view_y.
+INCLUDE ygf_in_report_controller_y.
+
+DATA:controller TYPE REF TO report_controller.
+
+INITIALIZATION.
+  CREATE OBJECT controller.
+
+START-OF-SELECTION.
+  controller->start_of_selection( ).
+
+*AT SELECTION-SCREEN.
+*  controller->on_user_command( ).
+
+END-OF-SELECTION.
+  controller->end_of_selection( ).

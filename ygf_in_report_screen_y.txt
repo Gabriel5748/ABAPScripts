@@ -1,0 +1,7 @@
+*&---------------------------------------------------------------------*
+*& Include          YGF_IN_REPORT_SCREEN_Y
+*&---------------------------------------------------------------------*
+SELECTION-SCREEN: BEGIN OF BLOCK b1.
+SELECT-OPTIONS: p_period for ekko-aedat.
+PARAMETERS: p_data TYPE ekko-ebeln.
+SELECTION-SCREEN: END OF BLOCK b1.
